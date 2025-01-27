@@ -6,6 +6,7 @@ package runtime
 
 import (
 	"internal/abi"
+	"internal/runtime/atomic"
 	"internal/stringslite"
 	"unsafe"
 )
@@ -15,6 +16,8 @@ type mOS struct {
 	mutex       pthreadmutex
 	cond        pthreadcond
 	count       int
+
+	waitsema uint32 // semaphore for parking on locks
 }
 
 func unimplemented(name string) {
@@ -23,69 +26,99 @@ func unimplemented(name string) {
 }
 
 //go:nosplit
-func semacreate(mp *m) {
-	if mp.initialized {
-		return
-	}
-	mp.initialized = true
-	if err := pthread_mutex_init(&mp.mutex, nil); err != 0 {
-		throw("pthread_mutex_init")
-	}
-	if err := pthread_cond_init(&mp.cond, nil); err != 0 {
-		throw("pthread_cond_init")
-	}
-}
+func semacreate(mp *m) {}
 
 //go:nosplit
 func semasleep(ns int64) int32 {
-	var start int64
-	if ns >= 0 {
-		start = nanotime()
-	}
-	g := getg()
-	mp := g.m
-	if g == mp.gsignal {
-		// sema sleep/wakeup are implemented with pthreads, which are not async-signal-safe on Darwin.
-		throw("semasleep on Darwin signal stack")
-	}
-	pthread_mutex_lock(&mp.mutex)
-	for {
-		if mp.count > 0 {
-			mp.count--
-			pthread_mutex_unlock(&mp.mutex)
+	mp := getg().m
+
+	for v := atomic.Xadd(&mp.waitsema, -1); ; v = atomic.Load(&mp.waitsema) {
+		if int32(v) >= 0 {
 			return 0
 		}
+		futexsleep(&mp.waitsema, v, ns)
 		if ns >= 0 {
-			spent := nanotime() - start
-			if spent >= ns {
-				pthread_mutex_unlock(&mp.mutex)
+			if int32(v) >= 0 {
+				return 0
+			} else {
 				return -1
 			}
-			var t timespec
-			t.setNsec(ns - spent)
-			err := pthread_cond_timedwait_relative_np(&mp.cond, &mp.mutex, &t)
-			if err == _ETIMEDOUT {
-				pthread_mutex_unlock(&mp.mutex)
-				return -1
-			}
-		} else {
-			pthread_cond_wait(&mp.cond, &mp.mutex)
 		}
 	}
 }
 
 //go:nosplit
 func semawakeup(mp *m) {
-	if g := getg(); g == g.m.gsignal {
-		throw("semawakeup on Darwin signal stack")
+	v := atomic.Xadd(&mp.waitsema, 1)
+	if v == 0 {
+		futexwakeup(&mp.waitsema, 1)
 	}
-	pthread_mutex_lock(&mp.mutex)
-	mp.count++
-	if mp.count > 0 {
-		pthread_cond_signal(&mp.cond)
-	}
-	pthread_mutex_unlock(&mp.mutex)
 }
+
+// //go:nosplit
+// func semacreate(mp *m) {
+// 	if mp.initialized {
+// 		return
+// 	}
+// 	mp.initialized = true
+// 	if err := pthread_mutex_init(&mp.mutex, nil); err != 0 {
+// 		throw("pthread_mutex_init")
+// 	}
+// 	if err := pthread_cond_init(&mp.cond, nil); err != 0 {
+// 		throw("pthread_cond_init")
+// 	}
+// }
+//
+// //go:nosplit
+// func semasleep(ns int64) int32 {
+// 	var start int64
+// 	if ns >= 0 {
+// 		start = nanotime()
+// 	}
+// 	g := getg()
+// 	mp := g.m
+// 	if g == mp.gsignal {
+// 		// sema sleep/wakeup are implemented with pthreads, which are not async-signal-safe on Darwin.
+// 		throw("semasleep on Darwin signal stack")
+// 	}
+// 	pthread_mutex_lock(&mp.mutex)
+// 	for {
+// 		if mp.count > 0 {
+// 			mp.count--
+// 			pthread_mutex_unlock(&mp.mutex)
+// 			return 0
+// 		}
+// 		if ns >= 0 {
+// 			spent := nanotime() - start
+// 			if spent >= ns {
+// 				pthread_mutex_unlock(&mp.mutex)
+// 				return -1
+// 			}
+// 			var t timespec
+// 			t.setNsec(ns - spent)
+// 			err := pthread_cond_timedwait_relative_np(&mp.cond, &mp.mutex, &t)
+// 			if err == _ETIMEDOUT {
+// 				pthread_mutex_unlock(&mp.mutex)
+// 				return -1
+// 			}
+// 		} else {
+// 			pthread_cond_wait(&mp.cond, &mp.mutex)
+// 		}
+// 	}
+// }
+//
+// //go:nosplit
+// func semawakeup(mp *m) {
+// 	if g := getg(); g == g.m.gsignal {
+// 		throw("semawakeup on Darwin signal stack")
+// 	}
+// 	pthread_mutex_lock(&mp.mutex)
+// 	mp.count++
+// 	if mp.count > 0 {
+// 		pthread_cond_signal(&mp.cond)
+// 	}
+// 	pthread_mutex_unlock(&mp.mutex)
+// }
 
 // The read and write file descriptors used by the sigNote functions.
 var sigNoteRead, sigNoteWrite int32
@@ -200,6 +233,32 @@ func readRandom(r []byte) int {
 
 func goenvs() {
 	goenvs_unix()
+}
+
+const (
+	_UL_COMPARE_AND_WAIT = 1
+	_ULF_NO_ERRNO        = 0x01000000
+)
+
+//go:nosplit
+func futexsleep(addr *uint32, val uint32, ns int64) {
+	_ = ulock_wait(_UL_COMPARE_AND_WAIT|_ULF_NO_ERRNO, addr, uint64(val), uint32(ns))
+	// systemstack(func() {
+	// 	print("ulock_wait addr=", addr, " val=", val, " ret=", ret, "\n")
+	// })
+}
+
+//go:nosplit
+func futexwakeup(addr *uint32, cnt uint32) {
+	for range cnt {
+		ret := ulock_wake(_UL_COMPARE_AND_WAIT|_ULF_NO_ERRNO, addr, 0)
+		// systemstack(func() {
+		// 	print("ulock_wake=", addr, " ret=", ret, "\n")
+		// })
+		if ret >= 0 {
+			return
+		}
+	}
 }
 
 // May run with m.p==nil, so write barriers are not allowed.

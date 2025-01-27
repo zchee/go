@@ -824,3 +824,20 @@ TEXT runtime·proc_regionfilename_trampoline(SB),NOSPLIT,$0
 	MOVQ	0(DI), DI // pid
 	CALL	libc_proc_regionfilename(SB)
 	RET
+
+// ulock_wait_trampoline calls __ulock_wait.
+TEXT runtime·ulock_wait_trampoline(SB),NOSPLIT,$0
+	MOVL	8(DI), SI	// arg 2 addr
+	MOVQ	16(DI), DX	// arg 3 value
+	MOVQ	24(DI), CX	// arg 4 timeout
+	MOVQ	0(DI), DI	// arg 1 operation
+	CALL	libc_ulock_wait(SB)
+	RET
+
+// ulock_wake_trampoline calls __ulock_wake.
+TEXT runtime·ulock_wake_trampoline(SB),NOSPLIT,$0
+	MOVL	8(DI), SI	// arg 2 addr
+	MOVQ	16(DI), DX	// arg 3 wake_value
+	MOVQ	0(DI), DI	// arg 1 operation
+	CALL	libc_ulock_wake(SB)
+	RET

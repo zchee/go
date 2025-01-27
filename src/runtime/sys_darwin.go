@@ -650,6 +650,29 @@ func proc_regionfilename(pid int, address uint64, buf *byte, buflen int64) int32
 }
 func proc_regionfilename_trampoline()
 
+//go:nosplit
+//go:cgo_unsafe_args
+func ulock_wait(operation uint32, addr *uint32, val uint64, ns uint32) int32 {
+	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wait_trampoline)), unsafe.Pointer(&operation))
+	KeepAlive(operation)
+	KeepAlive(addr)
+	KeepAlive(val)
+	KeepAlive(ns)
+	return ret
+}
+func ulock_wait_trampoline()
+
+//go:nosplit
+//go:cgo_unsafe_args
+func ulock_wake(operation uint32, addr *uint32, cnt uint64) int32 {
+	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wake_trampoline)), unsafe.Pointer(&operation))
+	KeepAlive(operation)
+	KeepAlive(addr)
+	KeepAlive(cnt)
+	return ret
+}
+func ulock_wake_trampoline()
+
 // Tell the linker that the libc_* functions are to be found
 // in a system library, with the libc_ prefix missing.
 
@@ -706,3 +729,6 @@ func proc_regionfilename_trampoline()
 //go:cgo_import_dynamic libc_xpc_date_create_from_current xpc_date_create_from_current "/usr/lib/libSystem.B.dylib"
 
 //go:cgo_import_dynamic libc_issetugid issetugid "/usr/lib/libSystem.B.dylib"
+
+//go:cgo_import_dynamic libc_ulock_wait __ulock_wait "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc_ulock_wake __ulock_wake "/usr/lib/libSystem.B.dylib"
