@@ -21,7 +21,6 @@ import (
 	"net"
 	"net/textproto"
 	"net/url"
-	urlpkg "net/url"
 	"path"
 	"runtime"
 	"slices"
@@ -836,6 +835,7 @@ var copyBufPool = sync.Pool{New: func() any { return new([copyBufPoolSize]byte) 
 func getCopyBuf() []byte {
 	return copyBufPool.Get().(*[copyBufPoolSize]byte)[:]
 }
+
 func putCopyBuf(b []byte) {
 	if len(b) != copyBufPoolSize {
 		panic("trying to put back buffer of the wrong size in the copyBufPool")
@@ -2399,8 +2399,8 @@ func StripPrefix(prefix string, h Handler) Handler {
 // to "text/html; charset=utf-8" and writes a small HTML body.
 // Setting the Content-Type header to any value, including nil,
 // disables that behavior.
-func Redirect(w ResponseWriter, r *Request, url string, code int) {
-	if u, err := urlpkg.Parse(url); err == nil {
+func Redirect(w ResponseWriter, r *Request, uri string, code int) {
+	if u, err := url.Parse(uri); err == nil {
 		// If url was relative, make its path absolute by
 		// combining with request path.
 		// The client would probably do this for us,
@@ -2413,24 +2413,24 @@ func Redirect(w ResponseWriter, r *Request, url string, code int) {
 			}
 
 			// no leading http://server
-			if url == "" || url[0] != '/' {
+			if uri == "" || uri[0] != '/' {
 				// make relative path absolute
 				olddir, _ := path.Split(oldpath)
-				url = olddir + url
+				uri = olddir + uri
 			}
 
 			var query string
-			if i := strings.Index(url, "?"); i != -1 {
-				url, query = url[:i], url[i:]
+			if i := strings.Index(uri, "?"); i != -1 {
+				uri, query = uri[:i], uri[i:]
 			}
 
 			// clean up but preserve trailing slash
-			trailing := strings.HasSuffix(url, "/")
-			url = path.Clean(url)
-			if trailing && !strings.HasSuffix(url, "/") {
-				url += "/"
+			trailing := strings.HasSuffix(uri, "/")
+			uri = path.Clean(uri)
+			if trailing && !strings.HasSuffix(uri, "/") {
+				uri += "/"
 			}
-			url += query
+			uri += query
 		}
 	}
 
@@ -2441,7 +2441,7 @@ func Redirect(w ResponseWriter, r *Request, url string, code int) {
 	// Do it only if the request didn't already have a Content-Type header.
 	_, hadCT := h["Content-Type"]
 
-	h.Set("Location", hexEscapeNonASCII(url))
+	h.Set("Location", hexEscapeNonASCII(uri))
 	if !hadCT && (r.Method == "GET" || r.Method == "HEAD") {
 		h.Set("Content-Type", "text/html; charset=utf-8")
 	}
@@ -2449,7 +2449,7 @@ func Redirect(w ResponseWriter, r *Request, url string, code int) {
 
 	// Shouldn't send the body for POST or HEAD; that leaves GET.
 	if !hadCT && r.Method == "GET" {
-		body := "<a href=\"" + htmlEscape(url) + "\">" + StatusText(code) + "</a>.\n"
+		body := "<a href=\"" + htmlEscape(uri) + "\">" + StatusText(code) + "</a>.\n"
 		fmt.Fprintln(w, body)
 	}
 }
@@ -2470,12 +2470,12 @@ func htmlEscape(s string) string {
 
 // Redirect to a fixed URL
 type redirectHandler struct {
-	url  string
+	uri  string
 	code int
 }
 
 func (rh *redirectHandler) ServeHTTP(w ResponseWriter, r *Request) {
-	Redirect(w, r, rh.url, rh.code)
+	Redirect(w, r, rh.uri, rh.code)
 }
 
 // RedirectHandler returns a request handler that redirects
@@ -2484,8 +2484,8 @@ func (rh *redirectHandler) ServeHTTP(w ResponseWriter, r *Request) {
 //
 // The provided code should be in the 3xx range and is usually
 // [StatusMovedPermanently], [StatusFound] or [StatusSeeOther].
-func RedirectHandler(url string, code int) Handler {
-	return &redirectHandler{url, code}
+func RedirectHandler(uri string, code int) Handler {
+	return &redirectHandler{uri, code}
 }
 
 // ServeMux is an HTTP request multiplexer.

@@ -22,7 +22,6 @@ import (
 	"net/http/internal/ascii"
 	"net/textproto"
 	"net/url"
-	urlpkg "net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -859,8 +858,8 @@ func validMethod(method string) bool {
 }
 
 // NewRequest wraps [NewRequestWithContext] using [context.Background].
-func NewRequest(method, url string, body io.Reader) (*Request, error) {
-	return NewRequestWithContext(context.Background(), method, url, body)
+func NewRequest(method, uri string, body io.Reader) (*Request, error) {
+	return NewRequestWithContext(context.Background(), method, uri, body)
 }
 
 // NewRequestWithContext returns a new [Request] given a method, URL, and
@@ -886,7 +885,7 @@ func NewRequest(method, url string, body io.Reader) (*Request, error) {
 // exact value (instead of -1), GetBody is populated (so 307 and 308
 // redirects can replay the body), and Body is set to [NoBody] if the
 // ContentLength is 0.
-func NewRequestWithContext(ctx context.Context, method, url string, body io.Reader) (*Request, error) {
+func NewRequestWithContext(ctx context.Context, method, uri string, body io.Reader) (*Request, error) {
 	if method == "" {
 		// We document that "" means "GET" for Request.Method, and people have
 		// relied on that from NewRequest, so keep that working.
@@ -899,7 +898,7 @@ func NewRequestWithContext(ctx context.Context, method, url string, body io.Read
 	if ctx == nil {
 		return nil, errors.New("net/http: nil Context")
 	}
-	u, err := urlpkg.Parse(url)
+	u, err := url.Parse(uri)
 	if err != nil {
 		return nil, err
 	}
