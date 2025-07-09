@@ -622,3 +622,30 @@ TEXT runtime·proc_regionfilename_trampoline(SB),NOSPLIT,$0
 	MOVQ	0(DI), DI // pid
 	CALL	libc_proc_regionfilename(SB)
 	RET
+
+TEXT runtime·ulock_wait_trampoline(SB),NOSPLIT,$0
+	MOVQ	8(DI), SI		// arg 2 address
+	MOVQ	16(DI), DX		// arg 3 val
+	MOVL	24(DI), CX		// arg 4 max_us
+	MOVL	0(DI), DI		// arg 1 op
+	CALL	libc_ulock_wait(SB)
+	CMPL	AX, $-1
+	JNE	ok
+	CALL	libc_error(SB)
+	MOVLQSX	(AX), AX		// errno
+	NEGQ	AX			// caller wants it as a negative error code
+ok:
+	RET
+
+TEXT runtime·ulock_wake_trampoline(SB),NOSPLIT,$0
+	MOVQ	8(DI), SI		// arg 2 address
+	MOVQ	16(DI), DX		// arg 3 zero
+	MOVL	0(DI), DI		// arg 1 op
+	CALL	libc_ulock_wake(SB)
+	CMPL	AX, $-1
+	JNE	ok
+	CALL	libc_error(SB)
+	MOVLQSX	(AX), AX		// errno
+	NEGQ	AX			// caller wants it as a negative error code
+ok:
+	RET

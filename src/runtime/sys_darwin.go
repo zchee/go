@@ -521,6 +521,24 @@ func arc4random_buf(p unsafe.Pointer, n int32) {
 }
 func arc4random_buf_trampoline()
 
+//go:nosplit
+//go:cgo_unsafe_args
+func ulock_wait(op int32, address unsafe.Pointer, val uint32, max_us int32) (ret int32) {
+	ret = libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wait_trampoline)), unsafe.Pointer(&op))
+	KeepAlive(address)
+	return
+}
+func ulock_wait_trampoline()
+
+//go:nosplit
+//go:cgo_unsafe_args
+func ulock_wake(op int32, address unsafe.Pointer, zero int32) (ret int32) {
+	ret = libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wake_trampoline)), unsafe.Pointer(&op))
+	KeepAlive(address)
+	return
+}
+func ulock_wake_trampoline()
+
 // Not used on Darwin, but must be defined.
 func exitThread(wait *atomic.Uint32) {
 	throw("exitThread")
@@ -647,3 +665,6 @@ func proc_regionfilename_trampoline()
 //go:cgo_import_dynamic libc_xpc_date_create_from_current xpc_date_create_from_current "/usr/lib/libSystem.B.dylib"
 
 //go:cgo_import_dynamic libc_issetugid issetugid "/usr/lib/libSystem.B.dylib"
+
+//go:cgo_import_dynamic libc_ulock_wait __ulock_wait "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc_ulock_wake __ulock_wake "/usr/lib/libSystem.B.dylib"
