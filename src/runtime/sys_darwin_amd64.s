@@ -482,6 +482,30 @@ TEXT runtime·pthread_cond_signal_trampoline(SB),NOSPLIT,$0
 	CALL	libc_pthread_cond_signal(SB)
 	RET
 
+TEXT runtime·ulock_wait_trampoline(SB),NOSPLIT,$0
+	MOVL	0(DI), DI	// arg 1 operation
+	MOVQ	8(DI), SI	// arg 2 addr
+	MOVQ	16(DI), DX	// arg 3 value
+	MOVL	24(DI), CX	// arg 4 timeout
+	CALL	libc___ulock_wait(SB)
+	RET
+
+TEXT runtime·ulock_wait2_trampoline(SB),NOSPLIT,$0
+	MOVL	0(DI), DI	// arg 1 operation
+	MOVQ	8(DI), SI	// arg 2 addr
+	MOVQ	16(DI), DX	// arg 3 value
+	MOVQ	24(DI), CX	// arg 4 timeout
+	MOVQ	32(DI), R8	// arg 5 value2
+	CALL	libc___ulock_wait2(SB)
+	RET
+
+TEXT runtime·ulock_wake_trampoline(SB),NOSPLIT,$0
+	MOVL	0(DI), DI	// arg 1 operation
+	MOVQ	8(DI), SI	// arg 2 addr
+	MOVQ	16(DI), DX	// arg 3 wake_value
+	CALL	libc___ulock_wake(SB)
+	RET
+
 TEXT runtime·pthread_self_trampoline(SB),NOSPLIT,$0
 	MOVQ	DI, BX		// BX is caller-save
 	CALL	libc_pthread_self(SB)

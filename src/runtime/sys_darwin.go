@@ -29,6 +29,14 @@ type libcCallInfo struct {
 	r1, r2 uintptr // return values
 }
 
+type ulock_operation uint32
+
+const (
+	_UL_COMPARE_AND_WAIT ulock_operation = 1
+
+	_ULF_NO_ERRNO ulock_operation = 0x01000000
+)
+
 // syscall_syscalln is a wrapper around the libc call with variable arguments.
 //
 //go:linkname syscall_syscalln syscall.syscalln
@@ -69,6 +77,16 @@ func syscall_rawsyscalln(fn uintptr, args ...uintptr) (r1, r2, err uintptr) {
 }
 
 func syscallN_trampoline()
+
+//go:nosplit
+func libcErrno() int32 {
+	if gp := getg(); gp != nil && gp.m != nil && gp.m.errnoAddr != nil {
+		return *gp.m.errnoAddr
+	}
+	var errnoAddr *int32
+	libc_error_addr(&errnoAddr)
+	return *errnoAddr
+}
 
 // crypto_x509_syscall is used in crypto/x509/internal/macos to call into Security.framework and CF.
 
@@ -446,6 +464,75 @@ func kevent_trampoline()
 
 //go:nosplit
 //go:cgo_unsafe_args
+func ulock_wait(operation ulock_operation, addr unsafe.Pointer, value uint64, timeout uint32) (ret int32, errno int32) {
+	args := struct {
+		operation ulock_operation
+		addr      unsafe.Pointer
+		value     uint64
+		timeout   uint32
+	}{
+		operation: operation,
+		addr:      addr,
+		value:     value,
+		timeout:   timeout,
+	}
+	ret = libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wait_trampoline)), unsafe.Pointer(&args))
+	KeepAlive(addr)
+	if ret < 0 {
+		errno = -ret
+	}
+	return ret, errno
+}
+func ulock_wait_trampoline()
+
+//go:nosplit
+//go:cgo_unsafe_args
+func ulock_wait2(operation ulock_operation, addr unsafe.Pointer, value uint64, timeout uint64, value2 uint64) (ret int32, errno int32) {
+	args := struct {
+		operation ulock_operation
+		addr      unsafe.Pointer
+		value     uint64
+		timeout   uint64
+		value2    uint64
+	}{
+		operation: operation,
+		addr:      addr,
+		value:     value,
+		timeout:   timeout,
+		value2:    value2,
+	}
+	ret = libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wait2_trampoline)), unsafe.Pointer(&args))
+	KeepAlive(addr)
+	if ret < 0 {
+		errno = -ret
+	}
+	return ret, errno
+}
+func ulock_wait2_trampoline()
+
+//go:nosplit
+//go:cgo_unsafe_args
+func ulock_wake(operation ulock_operation, addr unsafe.Pointer, wake_value uint64) (ret int32, errno int32) {
+	args := struct {
+		operation  ulock_operation
+		addr       unsafe.Pointer
+		wake_value uint64
+	}{
+		operation:  operation,
+		addr:       addr,
+		wake_value: wake_value,
+	}
+	ret = libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wake_trampoline)), unsafe.Pointer(&args))
+	KeepAlive(addr)
+	if ret < 0 {
+		errno = -ret
+	}
+	return ret, errno
+}
+func ulock_wake_trampoline()
+
+//go:nosplit
+//go:cgo_unsafe_args
 func pthread_mutex_init(m *pthreadmutex, attr *pthreadmutexattr) int32 {
 	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(pthread_mutex_init_trampoline)), unsafe.Pointer(&m))
 	KeepAlive(m)
@@ -641,6 +728,9 @@ func proc_regionfilename_trampoline()
 //go:cgo_import_dynamic libc_pthread_cond_wait pthread_cond_wait "/usr/lib/libSystem.B.dylib"
 //go:cgo_import_dynamic libc_pthread_cond_timedwait_relative_np pthread_cond_timedwait_relative_np "/usr/lib/libSystem.B.dylib"
 //go:cgo_import_dynamic libc_pthread_cond_signal pthread_cond_signal "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc___ulock_wait __ulock_wait "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc___ulock_wait2 __ulock_wait2 "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc___ulock_wake __ulock_wake "/usr/lib/libSystem.B.dylib"
 //go:cgo_import_dynamic libc_arc4random_buf arc4random_buf "/usr/lib/libSystem.B.dylib"
 
 //go:cgo_import_dynamic libc_notify_is_valid_token notify_is_valid_token "/usr/lib/libSystem.B.dylib"

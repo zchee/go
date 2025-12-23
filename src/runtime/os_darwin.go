@@ -11,10 +11,7 @@ import (
 )
 
 type mOS struct {
-	initialized bool
-	mutex       pthreadmutex
-	cond        pthreadcond
-	count       int
+	waitsema uint32 // semaphore for parking on locks.
 
 	// address of errno variable for this thread.
 	// This is an optimization to avoid calling libc_error
@@ -27,79 +24,12 @@ func unimplemented(name string) {
 	*(*int)(unsafe.Pointer(uintptr(1231))) = 1231
 }
 
-//go:nosplit
-func semacreate(mp *m) {
-	if mp.initialized {
-		return
-	}
-	mp.initialized = true
-	if err := pthread_mutex_init(&mp.mutex, nil); err != 0 {
-		throw("pthread_mutex_init")
-	}
-	if err := pthread_cond_init(&mp.cond, nil); err != 0 {
-		throw("pthread_cond_init")
-	}
-}
-
-//go:nosplit
-func semasleep(ns int64) int32 {
-	var start int64
-	if ns >= 0 {
-		start = nanotime()
-	}
-	g := getg()
-	mp := g.m
-	if g == mp.gsignal {
-		// sema sleep/wakeup are implemented with pthreads, which are not async-signal-safe on Darwin.
-		throw("semasleep on Darwin signal stack")
-	}
-	pthread_mutex_lock(&mp.mutex)
-	for {
-		if mp.count > 0 {
-			mp.count--
-			pthread_mutex_unlock(&mp.mutex)
-			return 0
-		}
-		if ns >= 0 {
-			spent := nanotime() - start
-			if spent >= ns {
-				pthread_mutex_unlock(&mp.mutex)
-				return -1
-			}
-			var t timespec
-			t.setNsec(ns - spent)
-			err := pthread_cond_timedwait_relative_np(&mp.cond, &mp.mutex, &t)
-			if err == _ETIMEDOUT {
-				pthread_mutex_unlock(&mp.mutex)
-				return -1
-			}
-		} else {
-			pthread_cond_wait(&mp.cond, &mp.mutex)
-		}
-	}
-}
-
-//go:nosplit
-func semawakeup(mp *m) {
-	if g := getg(); g == g.m.gsignal {
-		throw("semawakeup on Darwin signal stack")
-	}
-	pthread_mutex_lock(&mp.mutex)
-	mp.count++
-	if mp.count > 0 {
-		pthread_cond_signal(&mp.cond)
-	}
-	pthread_mutex_unlock(&mp.mutex)
-}
-
 // The read and write file descriptors used by the sigNote functions.
 var sigNoteRead, sigNoteWrite int32
 
 // sigNoteSetup initializes a single, there-can-only-be-one, async-signal-safe note.
 //
-// The current implementation of notes on Darwin is not async-signal-safe,
-// because the functions pthread_mutex_lock, pthread_cond_signal, and
-// pthread_mutex_unlock, called by semawakeup, are not async-signal-safe.
+// The current implementation of notes on Darwin is not async-signal-safe.
 // There is only one case where we need to wake up a note from a signal
 // handler: the sigsend function. The signal handler code does not require
 // all the features of notes: it does not need to do a timed wait.
