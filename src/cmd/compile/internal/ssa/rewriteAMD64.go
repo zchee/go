@@ -26466,6 +26466,7 @@ func rewriteValueAMD64_OpAMD64SHLLconst(v *Value) bool {
 		return true
 	}
 	// match: (SHLLconst [c] (ADDL x x))
+	// cond: c < 31
 	// result: (SHLLconst [c+1] x)
 	for {
 		c := auxIntToInt8(v.AuxInt)
@@ -26473,7 +26474,7 @@ func rewriteValueAMD64_OpAMD64SHLLconst(v *Value) bool {
 			break
 		}
 		x := v_0.Args[1]
-		if x != v_0.Args[0] {
+		if x != v_0.Args[0] || !(c < 31) {
 			break
 		}
 		v.reset(OpAMD64SHLLconst)
@@ -26737,6 +26738,7 @@ func rewriteValueAMD64_OpAMD64SHLQconst(v *Value) bool {
 		return true
 	}
 	// match: (SHLQconst [c] (ADDQ x x))
+	// cond: c < 63
 	// result: (SHLQconst [c+1] x)
 	for {
 		c := auxIntToInt8(v.AuxInt)
@@ -26744,7 +26746,7 @@ func rewriteValueAMD64_OpAMD64SHLQconst(v *Value) bool {
 			break
 		}
 		x := v_0.Args[1]
-		if x != v_0.Args[0] {
+		if x != v_0.Args[0] || !(c < 63) {
 			break
 		}
 		v.reset(OpAMD64SHLQconst)
