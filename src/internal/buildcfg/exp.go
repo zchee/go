@@ -85,6 +85,7 @@ func ParseGOEXPERIMENT(goos, goarch, goexp string) (*ExperimentFlags, error) {
 		SIMD:                 goarch == "amd64", // TODO: remove this (default to false) when dev.simd is merged
 		RandomizedHeapBase64: true,
 		GreenTeaGC:           true,
+		GoroutineLeakProfile: true,
 	}
 	flags := &ExperimentFlags{
 		Flags:    baseline,
