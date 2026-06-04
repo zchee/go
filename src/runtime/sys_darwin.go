@@ -426,73 +426,32 @@ func kevent(kq int32, ch *keventt, nch int32, ev *keventt, nev int32, ts *timesp
 }
 func kevent_trampoline()
 
+// ulock_wait2 wraps __ulock_wait2, the kernel address-wait primitive backing
+// futexsleep. With _ULF_NO_ERRNO set in operation it returns a non-negative
+// count of remaining waiters on success or a negative errno on failure, so no
+// libc_error round-trip is needed.
+//
 //go:nosplit
 //go:cgo_unsafe_args
-func pthread_mutex_init(m *pthreadmutex, attr *pthreadmutexattr) int32 {
-	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(pthread_mutex_init_trampoline)), unsafe.Pointer(&m))
-	KeepAlive(m)
-	KeepAlive(attr)
+func ulock_wait2(operation uint32, addr unsafe.Pointer, value, timeout, value2 uint64) int32 {
+	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wait2_trampoline)), unsafe.Pointer(&operation))
+	KeepAlive(addr)
 	return ret
 }
-func pthread_mutex_init_trampoline()
+func ulock_wait2_trampoline()
 
+// ulock_wake wraps __ulock_wake, the kernel address-wake primitive backing
+// futexwakeup. With _ULF_NO_ERRNO set in operation it returns 0 on success or a
+// negative errno on failure (notably -_ENOENT when there are no waiters).
+//
 //go:nosplit
 //go:cgo_unsafe_args
-func pthread_mutex_lock(m *pthreadmutex) int32 {
-	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(pthread_mutex_lock_trampoline)), unsafe.Pointer(&m))
-	KeepAlive(m)
+func ulock_wake(operation uint32, addr unsafe.Pointer, wakeValue uint64) int32 {
+	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(ulock_wake_trampoline)), unsafe.Pointer(&operation))
+	KeepAlive(addr)
 	return ret
 }
-func pthread_mutex_lock_trampoline()
-
-//go:nosplit
-//go:cgo_unsafe_args
-func pthread_mutex_unlock(m *pthreadmutex) int32 {
-	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(pthread_mutex_unlock_trampoline)), unsafe.Pointer(&m))
-	KeepAlive(m)
-	return ret
-}
-func pthread_mutex_unlock_trampoline()
-
-//go:nosplit
-//go:cgo_unsafe_args
-func pthread_cond_init(c *pthreadcond, attr *pthreadcondattr) int32 {
-	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(pthread_cond_init_trampoline)), unsafe.Pointer(&c))
-	KeepAlive(c)
-	KeepAlive(attr)
-	return ret
-}
-func pthread_cond_init_trampoline()
-
-//go:nosplit
-//go:cgo_unsafe_args
-func pthread_cond_wait(c *pthreadcond, m *pthreadmutex) int32 {
-	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(pthread_cond_wait_trampoline)), unsafe.Pointer(&c))
-	KeepAlive(c)
-	KeepAlive(m)
-	return ret
-}
-func pthread_cond_wait_trampoline()
-
-//go:nosplit
-//go:cgo_unsafe_args
-func pthread_cond_timedwait_relative_np(c *pthreadcond, m *pthreadmutex, t *timespec) int32 {
-	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(pthread_cond_timedwait_relative_np_trampoline)), unsafe.Pointer(&c))
-	KeepAlive(c)
-	KeepAlive(m)
-	KeepAlive(t)
-	return ret
-}
-func pthread_cond_timedwait_relative_np_trampoline()
-
-//go:nosplit
-//go:cgo_unsafe_args
-func pthread_cond_signal(c *pthreadcond) int32 {
-	ret := libcCall(unsafe.Pointer(abi.FuncPCABI0(pthread_cond_signal_trampoline)), unsafe.Pointer(&c))
-	KeepAlive(c)
-	return ret
-}
-func pthread_cond_signal_trampoline()
+func ulock_wake_trampoline()
 
 //go:nosplit
 //go:cgo_unsafe_args
@@ -616,13 +575,8 @@ func proc_regionfilename_trampoline()
 //go:cgo_import_dynamic libc_kqueue kqueue "/usr/lib/libSystem.B.dylib"
 //go:cgo_import_dynamic libc_kevent kevent "/usr/lib/libSystem.B.dylib"
 
-//go:cgo_import_dynamic libc_pthread_mutex_init pthread_mutex_init "/usr/lib/libSystem.B.dylib"
-//go:cgo_import_dynamic libc_pthread_mutex_lock pthread_mutex_lock "/usr/lib/libSystem.B.dylib"
-//go:cgo_import_dynamic libc_pthread_mutex_unlock pthread_mutex_unlock "/usr/lib/libSystem.B.dylib"
-//go:cgo_import_dynamic libc_pthread_cond_init pthread_cond_init "/usr/lib/libSystem.B.dylib"
-//go:cgo_import_dynamic libc_pthread_cond_wait pthread_cond_wait "/usr/lib/libSystem.B.dylib"
-//go:cgo_import_dynamic libc_pthread_cond_timedwait_relative_np pthread_cond_timedwait_relative_np "/usr/lib/libSystem.B.dylib"
-//go:cgo_import_dynamic libc_pthread_cond_signal pthread_cond_signal "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc___ulock_wait2 __ulock_wait2 "/usr/lib/libSystem.B.dylib"
+//go:cgo_import_dynamic libc___ulock_wake __ulock_wake "/usr/lib/libSystem.B.dylib"
 //go:cgo_import_dynamic libc_arc4random_buf arc4random_buf "/usr/lib/libSystem.B.dylib"
 
 //go:cgo_import_dynamic libc_notify_is_valid_token notify_is_valid_token "/usr/lib/libSystem.B.dylib"

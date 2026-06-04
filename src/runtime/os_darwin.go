@@ -11,10 +11,7 @@ import (
 )
 
 type mOS struct {
-	initialized bool
-	mutex       pthreadmutex
-	cond        pthreadcond
-	count       int
+	waitsema uint32 // semaphore for parking on locks
 }
 
 func unimplemented(name string) {
@@ -22,69 +19,63 @@ func unimplemented(name string) {
 	*(*int)(unsafe.Pointer(uintptr(1231))) = 1231
 }
 
+// Darwin futex emulation via the __ulock kernel interface, the same address-wait
+// mechanism that the public os_sync_wait_on_address family (macOS 14.4+) wraps.
+// __ulock_wait2/__ulock_wake are available on every macOS release Go supports,
+// so they back futexsleep/futexwakeup unconditionally and there is no version
+// branch. The ULF_NO_ERRNO flag makes the calls return 0 or a negative errno in
+// the return register, so no libc_error round-trip is needed.
+const (
+	_UL_COMPARE_AND_WAIT = 0x1
+	_ULF_WAKE_ALL        = 0x100
+	_ULF_NO_ERRNO        = 0x1000000
+)
+
+// futexsleep atomically checks whether *addr == val and, if so, sleeps until
+// woken by futexwakeup. Spurious wakeups are permitted: callers re-check the
+// key and recompute the deadline, so transient errors (EINTR, EFAULT, ENOMEM,
+// ETIMEDOUT) need no special handling here.
+//
+// ns < 0 means sleep forever, which __ulock_wait2 encodes as a zero timeout.
+// ns == 0 means an immediate timeout (matching the zero-timespec behavior of
+// FUTEX_WAIT on Linux), so return without entering the kernel — a zero timeout
+// passed to __ulock_wait2 would instead block forever.
+//
 //go:nosplit
-func semacreate(mp *m) {
-	if mp.initialized {
+func futexsleep(addr *uint32, val uint32, ns int64) {
+	if ns == 0 {
 		return
 	}
-	mp.initialized = true
-	if err := pthread_mutex_init(&mp.mutex, nil); err != 0 {
-		throw("pthread_mutex_init")
+	var timeout uint64
+	if ns > 0 {
+		timeout = uint64(ns)
 	}
-	if err := pthread_cond_init(&mp.cond, nil); err != 0 {
-		throw("pthread_cond_init")
-	}
+	ulock_wait2(_UL_COMPARE_AND_WAIT|_ULF_NO_ERRNO, unsafe.Pointer(addr), uint64(val), timeout, 0)
 }
 
+// futexwakeup wakes up to cnt threads sleeping on addr. Darwin has no "wake N",
+// so cnt == 1 wakes any single waiter and any larger count wakes all of them.
+// __ulock_wake returns -_ENOENT when there are no waiters, which is the common
+// case for a wakeup that races ahead of the sleeper and is treated as success.
+//
 //go:nosplit
-func semasleep(ns int64) int32 {
-	var start int64
-	if ns >= 0 {
-		start = nanotime()
+func futexwakeup(addr *uint32, cnt uint32) {
+	op := uint32(_UL_COMPARE_AND_WAIT | _ULF_NO_ERRNO)
+	if cnt != 1 {
+		op |= _ULF_WAKE_ALL
 	}
-	g := getg()
-	mp := g.m
-	if g == mp.gsignal {
-		// sema sleep/wakeup are implemented with pthreads, which are not async-signal-safe on Darwin.
-		throw("semasleep on Darwin signal stack")
+	ret := ulock_wake(op, unsafe.Pointer(addr), 0)
+	if ret >= 0 || ret == -_ENOENT {
+		return
 	}
-	pthread_mutex_lock(&mp.mutex)
-	for {
-		if mp.count > 0 {
-			mp.count--
-			pthread_mutex_unlock(&mp.mutex)
-			return 0
-		}
-		if ns >= 0 {
-			spent := nanotime() - start
-			if spent >= ns {
-				pthread_mutex_unlock(&mp.mutex)
-				return -1
-			}
-			var t timespec
-			t.setNsec(ns - spent)
-			err := pthread_cond_timedwait_relative_np(&mp.cond, &mp.mutex, &t)
-			if err == _ETIMEDOUT {
-				pthread_mutex_unlock(&mp.mutex)
-				return -1
-			}
-		} else {
-			pthread_cond_wait(&mp.cond, &mp.mutex)
-		}
-	}
-}
 
-//go:nosplit
-func semawakeup(mp *m) {
-	if g := getg(); g == g.m.gsignal {
-		throw("semawakeup on Darwin signal stack")
-	}
-	pthread_mutex_lock(&mp.mutex)
-	mp.count++
-	if mp.count > 0 {
-		pthread_cond_signal(&mp.cond)
-	}
-	pthread_mutex_unlock(&mp.mutex)
+	// I don't know that __ulock_wake can return EINTR, but if it does, it would
+	// be safe to loop and call it again.
+	systemstack(func() {
+		print("futexwakeup addr=", addr, " returned ", ret, "\n")
+	})
+
+	*(*int32)(unsafe.Pointer(uintptr(0x1006))) = 0x1006
 }
 
 // The read and write file descriptors used by the sigNote functions.
@@ -92,9 +83,9 @@ var sigNoteRead, sigNoteWrite int32
 
 // sigNoteSetup initializes a single, there-can-only-be-one, async-signal-safe note.
 //
-// The current implementation of notes on Darwin is not async-signal-safe,
-// because the functions pthread_mutex_lock, pthread_cond_signal, and
-// pthread_mutex_unlock, called by semawakeup, are not async-signal-safe.
+// The current implementation of notes on Darwin is not guaranteed to be
+// async-signal-safe, because notewakeup relies on futexwakeup, which calls the
+// __ulock_wake kernel routine whose async-signal-safety is not documented.
 // There is only one case where we need to wake up a note from a signal
 // handler: the sigsend function. The signal handler code does not require
 // all the features of notes: it does not need to do a timed wait.
