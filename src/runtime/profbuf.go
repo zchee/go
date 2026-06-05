@@ -513,7 +513,9 @@ Read:
 		// Nothing to read right now.
 		// Return or sleep according to mode.
 		if mode == profBufNonBlocking {
-			// Necessary on Darwin, notetsleepg below does not work in signal handler, root cause of #61768.
+			// Used by the execution tracer's CPU profile reader
+			// (see traceReadCPU), which drains under traceAdvance and
+			// must not block on the notetsleepg path below.
 			return nil, nil, false
 		}
 		if !b.w.cas(bw, bw|profReaderSleeping) {
