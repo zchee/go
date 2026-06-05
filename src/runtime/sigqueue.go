@@ -109,10 +109,6 @@ Send:
 			break Send
 		case sigReceiving:
 			if sig.state.CompareAndSwap(sigReceiving, sigIdle) {
-				if GOOS == "darwin" || GOOS == "ios" {
-					sigNoteWakeup(&sig.note)
-					break Send
-				}
 				notewakeup(&sig.note)
 				break Send
 			}
@@ -145,10 +141,6 @@ func signal_recv() uint32 {
 				throw("signal_recv: inconsistent state")
 			case sigIdle:
 				if sig.state.CompareAndSwap(sigIdle, sigReceiving) {
-					if GOOS == "darwin" || GOOS == "ios" {
-						sigNoteSleep(&sig.note)
-						break Receive
-					}
 					notetsleepg(&sig.note, -1)
 					noteclear(&sig.note)
 					break Receive
@@ -201,11 +193,7 @@ func signal_enable(s uint32) {
 	if !sig.inuse {
 		// This is the first call to signal_enable. Initialize.
 		sig.inuse = true // enable reception of signals; cannot disable
-		if GOOS == "darwin" || GOOS == "ios" {
-			sigNoteSetup(&sig.note)
-		} else {
-			noteclear(&sig.note)
-		}
+		noteclear(&sig.note)
 	}
 
 	if s >= uint32(len(sig.wanted)*32) {

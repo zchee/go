@@ -246,7 +246,7 @@ func runtime_pprof_readProfile() ([]uint64, []unsafe.Pointer, bool) {
 	unlock(&cpuprof.lock)
 	readMode := profBufBlocking
 	if GOOS == "darwin" || GOOS == "ios" {
-		readMode = profBufNonBlocking // For #61768; on Darwin notes are not async-signal-safe.  See sigNoteSetup in os_darwin.go.
+		readMode = profBufNonBlocking // For #61768.
 	}
 	data, tags, eof := log.read(readMode)
 	if len(data) == 0 && eof {

@@ -78,58 +78,6 @@ func futexwakeup(addr *uint32, cnt uint32) {
 	*(*int32)(unsafe.Pointer(uintptr(0x1006))) = 0x1006
 }
 
-// The read and write file descriptors used by the sigNote functions.
-var sigNoteRead, sigNoteWrite int32
-
-// sigNoteSetup initializes a single, there-can-only-be-one, async-signal-safe note.
-//
-// The current implementation of notes on Darwin is not guaranteed to be
-// async-signal-safe, because notewakeup relies on futexwakeup, which calls the
-// __ulock_wake kernel routine whose async-signal-safety is not documented.
-// There is only one case where we need to wake up a note from a signal
-// handler: the sigsend function. The signal handler code does not require
-// all the features of notes: it does not need to do a timed wait.
-// This is a separate implementation of notes, based on a pipe, that does
-// not support timed waits but is async-signal-safe.
-func sigNoteSetup(*note) {
-	if sigNoteRead != 0 || sigNoteWrite != 0 {
-		// Generalizing this would require avoiding the pipe-fork-closeonexec race, which entangles syscall.
-		throw("duplicate sigNoteSetup")
-	}
-	var errno int32
-	sigNoteRead, sigNoteWrite, errno = pipe()
-	if errno != 0 {
-		throw("pipe failed")
-	}
-	closeonexec(sigNoteRead)
-	closeonexec(sigNoteWrite)
-
-	// Make the write end of the pipe non-blocking, so that if the pipe
-	// buffer is somehow full we will not block in the signal handler.
-	// Leave the read end of the pipe blocking so that we will block
-	// in sigNoteSleep.
-	setNonblock(sigNoteWrite)
-}
-
-// sigNoteWakeup wakes up a thread sleeping on a note created by sigNoteSetup.
-func sigNoteWakeup(*note) {
-	var b byte
-	write(uintptr(sigNoteWrite), unsafe.Pointer(&b), 1)
-}
-
-// sigNoteSleep waits for a note created by sigNoteSetup to be woken.
-func sigNoteSleep(*note) {
-	for {
-		var b byte
-		entersyscallblock()
-		n := read(sigNoteRead, unsafe.Pointer(&b), 1)
-		exitsyscall()
-		if n != -_EINTR {
-			return
-		}
-	}
-}
-
 // BSD interface for threading.
 func osinit() {
 	// pthread_create delayed until end of goenvs so that we
