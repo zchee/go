@@ -405,44 +405,20 @@ TEXT runtime·raise_trampoline(SB),NOSPLIT,$0
 	BL	libc_raise(SB)
 	RET
 
-TEXT runtime·pthread_mutex_init_trampoline(SB),NOSPLIT,$0
-	MOVD	8(R0), R1	// arg 2 attr
-	MOVD	0(R0), R0	// arg 1 mutex
-	BL	libc_pthread_mutex_init(SB)
+TEXT runtime·ulock_wait2_trampoline(SB),NOSPLIT,$0
+	MOVD	8(R0), R1	// arg 2 addr
+	MOVD	16(R0), R2	// arg 3 value
+	MOVD	24(R0), R3	// arg 4 timeout
+	MOVD	32(R0), R4	// arg 5 value2
+	MOVW	0(R0), R0	// arg 1 operation
+	BL	libc___ulock_wait2(SB)
 	RET
 
-TEXT runtime·pthread_mutex_lock_trampoline(SB),NOSPLIT,$0
-	MOVD	0(R0), R0	// arg 1 mutex
-	BL	libc_pthread_mutex_lock(SB)
-	RET
-
-TEXT runtime·pthread_mutex_unlock_trampoline(SB),NOSPLIT,$0
-	MOVD	0(R0), R0	// arg 1 mutex
-	BL	libc_pthread_mutex_unlock(SB)
-	RET
-
-TEXT runtime·pthread_cond_init_trampoline(SB),NOSPLIT,$0
-	MOVD	8(R0), R1	// arg 2 attr
-	MOVD	0(R0), R0	// arg 1 cond
-	BL	libc_pthread_cond_init(SB)
-	RET
-
-TEXT runtime·pthread_cond_wait_trampoline(SB),NOSPLIT,$0
-	MOVD	8(R0), R1	// arg 2 mutex
-	MOVD	0(R0), R0	// arg 1 cond
-	BL	libc_pthread_cond_wait(SB)
-	RET
-
-TEXT runtime·pthread_cond_timedwait_relative_np_trampoline(SB),NOSPLIT,$0
-	MOVD	8(R0), R1	// arg 2 mutex
-	MOVD	16(R0), R2	// arg 3 timeout
-	MOVD	0(R0), R0	// arg 1 cond
-	BL	libc_pthread_cond_timedwait_relative_np(SB)
-	RET
-
-TEXT runtime·pthread_cond_signal_trampoline(SB),NOSPLIT,$0
-	MOVD	0(R0), R0	// arg 1 cond
-	BL	libc_pthread_cond_signal(SB)
+TEXT runtime·ulock_wake_trampoline(SB),NOSPLIT,$0
+	MOVD	8(R0), R1	// arg 2 addr
+	MOVD	16(R0), R2	// arg 3 wake_value
+	MOVW	0(R0), R0	// arg 1 operation
+	BL	libc___ulock_wake(SB)
 	RET
 
 TEXT runtime·pthread_self_trampoline(SB),NOSPLIT,$0
